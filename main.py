@@ -46,6 +46,9 @@ def run():
     elif settings.algorithm == "subset":
         from dasklearn.simulation.subset.simulation import SubsetDLSimulation
         simulation = SubsetDLSimulation(settings, args.sample_size)
+    elif settings.algorithm == "gossip":
+        from dasklearn.simulation.gossip.simulation import GossipSimulation
+        simulation = GossipSimulation(settings)
     else:
         raise RuntimeError("Unsupported algorithm %s" % settings.algorithm)
     ensure_future(simulation.run())
