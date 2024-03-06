@@ -61,10 +61,14 @@ def aggregate(settings: SessionSettings, params: Dict):
 def test(settings: SessionSettings, params: Dict):
     global evaluator
     model = params["model"]
-    round_nr = params["round"]
+    # not all algorithms use rounds
+    round_nr = params["round"] if round in params else None
     cur_time = params["time"]
     peer_id = params["peer"]
-    logger.info("Testing model in round %d...", round_nr)
+    if round_nr:
+        logger.info("Testing model in round %d...", round_nr)
+    else:
+        logger.info("Testing model at time %f...", cur_time)
 
     dataset_base_path: str = settings.dataset_base_path or os.environ["HOME"]
     if settings.dataset in ["cifar10", "mnist", "fashionmnist"]:
@@ -76,8 +80,13 @@ def test(settings: SessionSettings, params: Dict):
     if not evaluator:
         evaluator = ModelEvaluator(data_dir, settings)
     accuracy, loss = evaluator.evaluate_accuracy(model, device_name=settings.torch_device_name)
-    with open(os.path.join(settings.data_dir, "accuracies.csv"), "a") as accuracies_file:
-        accuracies_file.write("%d,%d,%f,%f,%f\n" % (peer_id, round_nr, cur_time, accuracy, loss))
+    if round_nr:
+        with open(os.path.join(settings.data_dir, "accuracies.csv"), "a") as accuracies_file:
+            accuracies_file.write("%d,%d,%f,%f,%f\n" % (peer_id, round_nr, cur_time, accuracy, loss))
+    else:
+        with open(os.path.join(settings.data_dir, "accuracies.csv"), "a") as accuracies_file:
+            accuracies_file.write("%d,%f,%f,%f\n" % (peer_id, cur_time, accuracy, loss))
+
     logger.info("Model accuracy: %f, loss: %f", accuracy, loss)
 
     detached_model = unserialize_model(serialize_model(model), settings.dataset, architecture=settings.model)

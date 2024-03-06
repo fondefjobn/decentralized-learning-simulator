@@ -16,3 +16,4 @@ class GossipSimulation(Simulation):
 
         self.register_event_callback(FINISH_TRAIN, "finish_train")
         self.register_event_callback(DISSEMINATE, "disseminate")
+        self.register_event_callback(TEST, "test")
