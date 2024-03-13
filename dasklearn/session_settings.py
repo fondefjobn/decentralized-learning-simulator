@@ -47,3 +47,4 @@ class SessionSettings:
     port: int = 5555
     log_level: str = "INFO"
     torch_threads: int = 4
+    compute_graph_size: int = 0

@@ -1,6 +1,9 @@
-from typing import Dict, List, Set
+from typing import Dict, List, Set, Tuple, Any
+from collections import Counter
 
+from networkx import DiGraph
 from torch import nn
+import networkx as nx
 
 from dasklearn.tasks.task import Task
 
@@ -69,3 +72,29 @@ class WorkflowDAG:
         model_hashes = set()
         WorkflowDAG.count_models([d.data for d in self.tasks.values() if d.data is not None], model_hashes)
         return len(model_hashes)
+
+    def to_nx(self, max_size: int) -> tuple[DiGraph, dict[str, tuple[int | int]]]:
+        graph = nx.DiGraph()
+        layer = {}
+        at_layer = Counter()
+        position = {}
+        for task in self.tasks.values():
+            if max_size <= 0:
+                break
+            if len(task.inputs) == 0:
+                layer[task.name] = 0
+                graph.add_node(task.name)
+            else:
+                layer[task.name] = min(map(lambda x: layer[x.name], task.inputs)) - 1
+                for inp in task.inputs:
+                    graph.add_edge(task.name, inp.name)
+            max_size -= 1
+            position[task.name] = at_layer[layer[task.name]], layer[task.name]
+            if at_layer[layer[task.name]] == 0:
+                at_layer[layer[task.name]] = 1
+            elif at_layer[layer[task.name]] > 0:
+                at_layer[layer[task.name]] *= -1
+            else:
+                at_layer[layer[task.name]] *= -1
+                at_layer[layer[task.name]] += 1
+        return graph, position

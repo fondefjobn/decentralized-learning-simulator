@@ -37,6 +37,9 @@ def get_args():
     parser.add_argument('--brokers', type=int, default=1)
     parser.add_argument('--port', type=int, default=5555)
 
+    # Visualization
+    parser.add_argument('--compute_graph_size', type=int, default=0)
+
     args = parser.parse_args()
     if args.dataset == "femnist":
         args.learning_rate = 0.004

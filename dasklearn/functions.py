@@ -3,7 +3,11 @@ import os
 import time
 from typing import Dict
 
+import pandas as pd
 import torch
+import seaborn as sns
+import numpy as np
+import matplotlib.pyplot as plt
 
 from dasklearn.model_evaluator import ModelEvaluator
 from dasklearn.model_manager import ModelManager
@@ -86,7 +90,7 @@ def test(settings: SessionSettings, params: Dict):
             accuracies_file.write("%d,%d,%f,%f,%f\n" % (peer_id, round_nr, cur_time, accuracy, loss))
     else:
         with open(os.path.join(settings.data_dir, "accuracies.csv"), "a") as accuracies_file:
-            accuracies_file.write("%d,%f,%f,%f\n" % (peer_id, cur_time, accuracy, loss))
+            accuracies_file.write("%d,,%f,%f,%f\n" % (peer_id, cur_time, accuracy, loss))
 
     logger.info("Model accuracy: %f, loss: %f", accuracy, loss)
 

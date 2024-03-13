@@ -8,6 +8,9 @@ from asyncio import Future
 from random import Random
 from typing import List, Optional, Callable
 
+import networkx as nx
+import matplotlib.pyplot as plt
+
 from dasklearn.communication import Communication
 from dasklearn.models import create_model, serialize_model
 from dasklearn.session_settings import SessionSettings
@@ -148,6 +151,12 @@ class Simulation:
             self.process_event(event)
 
         await self.solve_workflow_graph()
+
+        # Plot compute graph
+        if self.settings.compute_graph_size > 0:
+            graph, position = self.workflow_dag.to_nx(self.settings.compute_graph_size)
+            nx.draw(graph, position, with_labels=True, node_color='red', node_size=50, font_size=8, arrows=True)
+            plt.savefig(os.path.join(self.settings.data_dir, "compute_graph.pdf"))
 
         # Done! Sanity checks
         for client in self.clients:
