@@ -15,8 +15,8 @@ def get_args():
     parser.add_argument('--dataset-base-path', type=str, default=None)
     parser.add_argument('--peers', type=int, default=2)
     parser.add_argument('--rounds', type=int, default=1)
-    parser.add_argument('--duration', type=float, default=100)
-    parser.add_argument('--period', type=float, default=10)
+    parser.add_argument('--duration', type=int, default=100)
+    parser.add_argument('--period', type=int, default=10)
     parser.add_argument('--model', type=str, default="gnlenet")
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--log-level', type=str, default="INFO")
@@ -31,7 +31,7 @@ def get_args():
 
     # Accuracy checking
     parser.add_argument('--test-interval', type=int, default=5)
-    parser.add_argument('--test-period', type=float, default=100)
+    parser.add_argument('--test-period', type=int, default=100)
 
     # Dask-related parameters
     parser.add_argument('--brokers', type=int, default=1)

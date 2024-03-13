@@ -36,13 +36,13 @@ class SessionSettings:
     gradient_aggregation: GradientAggregationMethod = GradientAggregationMethod.FEDAVG
     torch_device_name: str = "cpu"
     test_interval: int = 0
-    test_period: float = 100
+    test_period: int = 100
     scheduler: Optional[str] = None
     brokers: Optional[int] = None
     capability_traces: Optional[str] = None
     rounds: int = 10
-    duration: float = 100
-    period: float = 10
+    duration: int = 100
+    period: int = 10
     data_dir: str = ""
     port: int = 5555
     log_level: str = "INFO"
