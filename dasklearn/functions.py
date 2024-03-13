@@ -43,6 +43,7 @@ def aggregate(settings: SessionSettings, params: Dict):
     models = params["models"]
     round_nr = params["round"]
     peer_id = params["peer"]
+    weights = params["weights"] if "weights" in params else None
     if peer_id is not None:
         logger.info("Peer %d aggregating %d models in round %d...", peer_id, len(models), round_nr)
     else:
@@ -53,7 +54,7 @@ def aggregate(settings: SessionSettings, params: Dict):
         model_manager.process_incoming_trained_model(idx, model)
 
     start_time = time.time()
-    agg_model = model_manager.aggregate_trained_models()
+    agg_model = model_manager.aggregate_trained_models(weights) if weights else model_manager.aggregate_trained_models()
     logger.info("Model aggregation took %f s.", time.time() - start_time)
     return agg_model
 

@@ -67,9 +67,12 @@ class BaseClient:
         """
         self.bw_scheduler.on_outgoing_transfer_complete(event.data["transfer"])
 
-    def aggregate_models(self, models: List[str]) -> str:
+    def aggregate_models(self, models: List[str], weights: List[float] = None) -> str:
         task_name = "agg_%s" % get_random_hex_str(6)
-        task = Task(task_name, "aggregate", data={"models": models, "round": self.round, "peer": self.index})
+        data = {"models": models, "round": self.round, "peer": self.index}
+        if weights:
+            data["weights"] = weights
+        task = Task(task_name, "aggregate", data=data)
         self.add_compute_task(task)
         return task_name
 

@@ -1,6 +1,4 @@
-import math
-
-import networkx as nx
+import random
 
 from dasklearn.session_settings import SessionSettings
 from dasklearn.simulation.gossip.client import GossipClient
@@ -17,3 +15,12 @@ class GossipSimulation(Simulation):
         self.register_event_callback(FINISH_TRAIN, "finish_train")
         self.register_event_callback(DISSEMINATE, "disseminate")
         self.register_event_callback(TEST, "test")
+
+        random.seed(settings.seed)
+
+    def get_random_participant(self, index: int):
+        # returns a random participant other than myself (index)
+        candidate = index
+        while candidate == index:
+            candidate = random.randint(0, self.settings.participants - 1)
+        return candidate
