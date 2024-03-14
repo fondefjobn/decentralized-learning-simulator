@@ -41,7 +41,8 @@ def run():
         port=args.port,
         log_level=args.log_level,
         torch_threads=args.torch_threads,
-        compute_graph_size=args.compute_graph_size
+        compute_graph_size=args.compute_graph_size,
+        plot=args.plot
     )
 
     if settings.algorithm == "dpsgd":

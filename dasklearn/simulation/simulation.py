@@ -10,6 +10,8 @@ from typing import List, Optional, Callable
 
 import networkx as nx
 import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
 
 from dasklearn.communication import Communication
 from dasklearn.models import create_model, serialize_model
@@ -99,6 +101,9 @@ class Simulation:
                 self.logger.info("All sink tasks completed - shutting down brokers")
                 out_msg = pickle.dumps({"type": "shutdown"})
                 self.communication.send_message_to_all_brokers(out_msg)
+                if self.settings.plot:
+                    self.logger.info("Plotting accuracies")
+                    self.plot_loss()
                 asyncio.get_event_loop().call_later(2, asyncio.get_event_loop().stop)
         elif msg["type"] == "shutdown":
             self.logger.info("Received shutdown signal - stopping")
@@ -212,3 +217,11 @@ class Simulation:
         for broker, tasks in brokers_to_tasks.items():
             self.logger.info("Scheduling %d task(s) on broker %s", len(tasks), broker)
             self.schedule_tasks_on_broker(tasks, broker)
+
+    def plot_loss(self):
+        data = pd.read_csv(os.path.join(self.settings.data_dir, "accuracies.csv"), header=None,
+                           names=['peer', 'round', 'time', 'accuracy', 'loss'])
+        fig, ax = plt.subplots(1, 2, figsize=(10, 5))
+        g = sns.lineplot(data, x='time', y='loss', ax=ax[0])
+        g = sns.lineplot(data, x='time', y='accuracy', ax=ax[1])
+        plt.savefig(os.path.join(self.settings.data_dir, "accuracies.pdf"))

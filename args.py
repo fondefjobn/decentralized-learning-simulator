@@ -39,6 +39,7 @@ def get_args():
 
     # Visualization
     parser.add_argument('--compute_graph_size', type=int, default=0)
+    parser.add_argument('--plot', type=bool, default=True)
 
     args = parser.parse_args()
     if args.dataset == "femnist":
