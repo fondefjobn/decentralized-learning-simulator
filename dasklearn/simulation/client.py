@@ -68,6 +68,12 @@ class BaseClient:
         """
         self.bw_scheduler.on_outgoing_transfer_complete(event.data["transfer"])
 
+    def stop_transfers(self, peer: int):
+        """
+        Stops outgoing transfers that were not sent yet to the given peer.
+        """
+        self.bw_scheduler.stop_transfers(peer, self.simulator.clients[peer].bw_scheduler)
+
     def aggregate_models(self, models: List[str], round_nr: int, weights: List[float] = None) -> str:
         task_name = Task.generate_name("agg")
         data = {"models": models, "round": round_nr, "peer": self.index}

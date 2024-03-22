@@ -76,6 +76,22 @@ class BWScheduler:
 
         return transfer
 
+    def stop_transfers(self, peer: int, peer_scheduler: "BWScheduler") -> None:
+        """
+        Stops outgoing transfers that were not sent yet to the given peer.
+        """
+        requests_deleted: List[Transfer] = []
+        for request in self.outgoing_requests:
+            if request.receiver_scheduler.my_id == peer:
+                requests_deleted.append(request)
+
+        for request in requests_deleted:
+            self.logger.debug("Removing transfer request %d: %s => %s", request.transfer_id,
+                              self.my_id, request.receiver_scheduler.my_id)
+            self.outgoing_requests.remove(request)
+            if request in peer_scheduler.incoming_requests:
+                peer_scheduler.incoming_requests.remove(request)
+
     def schedule(self):
         """
         Try to schedule pending outgoing requests and allocate bandwidth to them.

@@ -87,6 +87,9 @@ class GossipClient(BaseClient):
             peer = self.simulator.get_random_participant(self.index)
             metadata = dict(rounds=self.age)
 
+            # Cancel any waiting transfers
+            self.stop_transfers(peer)
+
             self.client_log("Client %d will send model %s to %d" % (self.index, self.own_model, peer))
             self.send_model(peer, self.own_model, metadata)
 
