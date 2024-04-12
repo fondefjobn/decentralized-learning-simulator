@@ -47,6 +47,7 @@ def run():
         gl_period=args.gl_period * MICROSECONDS,
         test_period=args.test_period * MICROSECONDS,
         compute_graph_plot_size=args.compute_graph_plot_size,
+        stop=args.stop,
     )
 
     if settings.algorithm == "fl":
