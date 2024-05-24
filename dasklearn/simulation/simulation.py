@@ -4,11 +4,13 @@ import os
 import pickle
 import shutil
 import resource
+from collections import defaultdict
+from queue import Queue
+
 import psutil
-import random
 from asyncio import Future
 from random import Random
-from typing import List, Optional, Callable, Tuple
+from typing import List, Optional, Callable, Tuple, Set
 from datetime import datetime
 from heapq import nlargest
 
@@ -44,7 +46,8 @@ class Simulation:
         self.settings = settings
         self.events: List[Tuple[int, int, Event]] = []
         self.event_callbacks: Dict[str, str] = {}
-        self.workflow_dag = WorkflowDAG()
+        self.workflow_dag: WorkflowDAG = WorkflowDAG()
+        self.prev_dag: Optional[WorkflowDAG] = None
         self.model_size: int = 0
         self.current_time: int = 0
         self.brokers_available_future: Future = Future()
@@ -57,6 +60,10 @@ class Simulation:
         self.communication: Optional[Communication] = None
         self.n_sink_tasks: int = 0
         self.sink_tasks_counter: int = 0
+        self.can_run_condition: asyncio.Condition = asyncio.Condition()
+        self.can_run: bool = True
+        self.client_last_tasks: Dict[str, Queue[str]] = defaultdict(Queue)
+        self.tasks_to_keep: Set[str] = set()
 
         self.memory_log: List[Tuple[int, psutil.pmem]] = []  # time, memory info
 
@@ -92,7 +99,7 @@ class Simulation:
                 self.brokers_to_clients[broker] = []
             self.brokers_to_clients[broker].append(client)
 
-    def on_message(self, identity: str, msg: Dict):
+    async def on_message(self, identity: str, msg: Dict):
         if msg["type"] == "hello":  # Register a new broker
             self.logger.info("Registering new broker %s", msg["address"])
             self.communication.connect_to(identity, msg["address"])
@@ -110,6 +117,11 @@ class Simulation:
             self.sink_tasks_counter += 1
 
             if self.sink_tasks_counter == self.n_sink_tasks:
+                if not self.can_run:
+                    async with self.can_run_condition:
+                        self.can_run = True
+                        self.can_run_condition.notify_all()
+                    return
                 self.logger.info("All sink tasks completed - shutting down brokers")
                 out_msg = pickle.dumps({"type": "shutdown"})
                 self.communication.send_message_to_all_brokers(out_msg)
@@ -174,6 +186,9 @@ class Simulation:
         self.model_size = len(serialize_model(create_model(self.settings.dataset, architecture=self.settings.model)))
         self.logger.info("Determine model size: %d bytes", self.model_size)
 
+        if not self.settings.dry_run:
+            await self.brokers_connected()
+
         process = psutil.Process()
         self.memory_log.append((self.current_time, process.memory_info()))
 
@@ -182,9 +197,23 @@ class Simulation:
             assert event.time >= self.current_time, "New event %s cannot be executed in the past! (current time: %d)" % (str(event), self.current_time)
             self.current_time = event.time
             self.process_event(event)
-            # No need to track memory at every event
-            if random.random() < 0.1 / self.settings.participants:
+
+            # DAG is large enough, compute tasks
+            if len(self.workflow_dag.tasks) >= self.settings.dag_size and not self.settings.dry_run:
                 self.memory_log.append((self.current_time, process.memory_info()))
+                self.workflow_dag.save_to_file(os.path.join(self.data_dir, "workflow_graph.txt"))
+
+                self.can_run = False
+                if self.prev_dag is None:
+                    self.plot_compute_graph()
+                self.solve_workflow_graph()
+
+                # Wait to receive all sink tasks
+                async with self.can_run_condition:
+                    while not self.can_run:
+                        await self.can_run_condition.wait()
+                self.prev_dag = self.workflow_dag
+                self.workflow_dag = WorkflowDAG()
 
         self.memory_log.append((self.current_time, process.memory_info()))
         self.workflow_dag.save_to_file(os.path.join(self.data_dir, "workflow_graph.txt"))
@@ -192,11 +221,9 @@ class Simulation:
 
         # Sanity check the DAG
         self.workflow_dag.check_validity()
-        self.plot_compute_graph()
-        self.n_sink_tasks = len(self.workflow_dag.get_sink_tasks())
 
         if not self.settings.dry_run:
-            await self.solve_workflow_graph()
+            self.solve_workflow_graph()
 
         # Done! Sanity checks
         for client in self.clients:
@@ -227,15 +254,19 @@ class Simulation:
         bisect.insort(self.events, (event.time, event.index, event))
 
     def schedule_tasks_on_broker(self, tasks: List[Task], broker: str):
-        msg = pickle.dumps({"type": "tasks", "tasks": [task.name for task in tasks]})
+        msg = pickle.dumps({"type": "tasks",
+                            "tasks": [task.name for task in tasks],
+                            "dag": self.workflow_dag.serialize(),
+                            "tasks_to_keep": self.tasks_to_keep,
+                            })
         self.communication.send_message_to_broker(broker, msg)
 
-    async def solve_workflow_graph(self):
-        self.logger.info("Will start solving workflow DAG with %d tasks, waiting for %d broker(s)...", len(self.workflow_dag.tasks), self.settings.brokers)
+    async def brokers_connected(self):
+        self.logger.info("Waiting for %d broker(s)...", self.settings.brokers)
 
         await self.brokers_available_future
 
-        self.logger.info("%d brokers available - starting to solve workload", len(self.broker_addresses))
+        self.logger.info("%d brokers available", len(self.broker_addresses))
 
         # Send all brokers the right configuration
         self.distribute_brokers()
@@ -244,12 +275,24 @@ class Simulation:
             "brokers": self.broker_addresses,
             "brokers_to_clients": self.brokers_to_clients,
             "settings": self.settings.to_dict(),
-            "dag": self.workflow_dag.serialize()
         }
         msg = pickle.dumps(data)
         self.communication.send_message_to_all_brokers(msg)
 
-        source_tasks = self.workflow_dag.get_source_tasks()
+    def solve_workflow_graph(self):
+        if len(self.workflow_dag.tasks) == 0:
+            return
+        self.logger.info("Will start solving workflow DAG with %d tasks", len(self.workflow_dag.tasks))
+        self.sink_tasks_counter = 0
+        self.n_sink_tasks = len(self.workflow_dag.get_sink_tasks())
+
+        # Compute source tasks
+        if self.prev_dag is None:
+            source_tasks = self.workflow_dag.get_source_tasks()
+        else:
+            source_tasks = list(filter(lambda x: all(map(lambda y: y.name in self.prev_dag.tasks.keys(), x.inputs)),
+                                       self.workflow_dag.tasks.values()))
+
         brokers_to_tasks: Dict[str, List[Task]] = {}
         for source_task in source_tasks:
             broker = self.clients_to_brokers[source_task.data["peer"]]
@@ -260,6 +303,11 @@ class Simulation:
         for broker, tasks in brokers_to_tasks.items():
             self.logger.info("Scheduling %d task(s) on broker %s", len(tasks), broker)
             self.schedule_tasks_on_broker(tasks, broker)
+
+    def get_preceding_task(self, model_name: str):
+        if model_name in self.workflow_dag.tasks:
+            return self.workflow_dag.tasks[model_name]
+        return self.prev_dag.tasks[model_name]
 
     def plot_loss(self):
         # Check if the accuracies file exists

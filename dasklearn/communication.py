@@ -35,7 +35,10 @@ class Communication:
             msg = pickle.loads(msg)
             self.logger.debug(f"Received message from {identity.decode()}: {msg}")
             try:
-                self.message_callback(identity.decode(), msg)
+                if identity.decode() != "coordinator":
+                    await self.message_callback(identity.decode(), msg)
+                else:
+                    self.message_callback(identity.decode(), msg)
             except Exception as exc:
                 self.logger.exception(exc)
 

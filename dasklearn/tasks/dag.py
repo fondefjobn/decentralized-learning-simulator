@@ -1,3 +1,4 @@
+import os
 from typing import Dict, List, Set
 
 from torch import nn
@@ -30,14 +31,20 @@ class WorkflowDAG:
         return [task.to_json_dict() for task in self.tasks.values()]
 
     def save_to_file(self, file_path: str) -> None:
-        with open(file_path, "w") as dag_file:
-            dag_file.write("from,to\n")
-            for task_name, task in self.tasks.items():
-                for output in task.outputs:
-                    dag_file.write("%s,%s\n" % (task_name, output.name))
+        if os.path.exists(file_path):
+            with open(file_path, "a") as dag_file:
+                for task_name, task in self.tasks.items():
+                    for output in task.outputs:
+                        dag_file.write("%s,%s\n" % (task_name, output.name))
+        else:
+            with open(file_path, "w") as dag_file:
+                dag_file.write("from,to\n")
+                for task_name, task in self.tasks.items():
+                    for output in task.outputs:
+                        dag_file.write("%s,%s\n" % (task_name, output.name))
 
     @classmethod
-    def unserialize(cls, serialized_tasks):
+    def unserialize(cls, serialized_tasks, prev_dag, results):
         dag = WorkflowDAG()
         for serialized_task in serialized_tasks:
             task: Task = Task.from_json_dict(serialized_task)
@@ -47,7 +54,12 @@ class WorkflowDAG:
         for serialized_task in serialized_tasks:
             task = dag.tasks[serialized_task["name"]]
             for input_task_name in serialized_task["inputs"]:
-                task.inputs.append(dag.tasks[input_task_name])
+                if prev_dag is not None and input_task_name in prev_dag.tasks:
+                    # Use task from previous dag
+                    task.inputs.append(prev_dag.tasks[input_task_name])
+                    task.set_data(input_task_name, results[input_task_name])
+                else:
+                    task.inputs.append(dag.tasks[input_task_name])
             for output_task_name in serialized_task["outputs"]:
                 task.outputs.append(dag.tasks[output_task_name])
 

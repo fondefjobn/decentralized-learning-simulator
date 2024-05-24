@@ -12,6 +12,7 @@ from typing import List, Optional, Set, Tuple
 
 from dasklearn.communication import Communication
 from dasklearn.functions import *
+from dasklearn.models import Model
 from dasklearn.tasks.dag import WorkflowDAG
 from dasklearn.tasks.task import Task
 from dasklearn.util.logging import setup_logging
@@ -34,10 +35,13 @@ class Broker:
         self.clients_to_brokers: Dict = {}
         self.logger = logging.getLogger(self.__class__.__name__)
         self.settings: Optional[SessionSettings] = None
-        self.dag: Optional[WorkflowDAG] = None
+        self.dag: WorkflowDAG = WorkflowDAG()
         self.coordinator_socket = None
         self.communication: Optional[Communication] = None
         self.broker_addresses: Dict[str, str] = {}
+        self.results: Dict[str, Model] = {}
+        self.results_condition: threading.Condition = threading.Condition()
+        self.tasks_to_keep: Set[str] = set()
 
         self.workers: List[Process] = []
         self.psutil_workers: List = []
@@ -183,11 +187,20 @@ class Broker:
                 self.task_statistics.append(task_stats)
 
                 self.logger.info("Task %s completed", task.name)
+                msg = pickle.dumps({"type": "result", "task": task.name, "result": res})
+
+                # Send result to all brokers
+                if task_name in self.tasks_to_keep:
+                    self.communication.send_message_to_all_brokers(msg)
+                    self.handle_task_result(task, res)
+                    # Sink task
+                    if not task.outputs:
+                        self.communication.send_message_to_coordinator(msg)
+                    continue
 
                 # If this is a sink task, inform the coordinator about the result
                 if not task.outputs:
                     # This is a sink task with no further outputs - send the result back to the coordinator
-                    msg = pickle.dumps({"type": "result", "task": task.name, "result": res})
                     self.communication.send_message_to_coordinator(msg)
                 else:
                     # Some broker needs this result - get all brokers we need to inform about this result
@@ -200,7 +213,6 @@ class Broker:
                         if broker_to_inform == self.identity:
                             self.handle_task_result(task, res)
                         else:
-                            msg = pickle.dumps({"type": "result", "task": task.name, "result": res})
                             self.communication.send_message_to_broker(broker_to_inform, msg)
 
                 task.clear_data()  # Clean up the memory of the completed task
@@ -264,6 +276,13 @@ class Broker:
         We received a task result - either locally or from another worker. Handle it.
         """
         self.logger.info("Handling result of task %s", task)
+        # Save relevant result
+        if task.name in self.tasks_to_keep:
+            self.results[task.name] = res
+            if len(self.results) == len(self.tasks_to_keep):
+                with self.results_condition:
+                    self.results_condition.notify_all()
+        # Handle result
         for next_task in task.outputs:
             if next_task.data["peer"] in self.brokers_to_clients[self.identity]:
                 next_task.set_data(task.name, res)
@@ -285,12 +304,26 @@ class Broker:
             self.settings = SessionSettings.from_dict(msg["settings"])
             os.makedirs(self.settings.data_dir, exist_ok=True)
             setup_logging(self.settings.data_dir, "%s.log" % self.identity, log_level=self.settings.log_level)
-            self.dag = WorkflowDAG.unserialize(msg["dag"])
             self.connect_to_brokers()
             ensure_future(self.start_workers())
         elif identity == "coordinator" and msg["type"] == "tasks":
+            # Wait to receive all results
+            with self.results_condition:
+                while len(self.results) < len(self.tasks_to_keep):
+                    self.results_condition.wait()
+
+            # Update dag
+            self.dag = WorkflowDAG.unserialize(msg["dag"], self.dag, self.results)
+            self.tasks_to_keep = msg["tasks_to_keep"]
+            # Keep relevant models
+            new_results: Dict[str, Model] = {}
+            for task_name in self.tasks_to_keep:
+                if task_name in self.results:
+                    new_results[task_name] = self.results[task_name]
+            self.results = new_results
+
+            # Enqueue tasks
             for task_name in msg["tasks"]:
-                # Enqueue tasks
                 task = self.dag.tasks[task_name]
                 self.schedule_task(task)
         elif msg["type"] == "shutdown":

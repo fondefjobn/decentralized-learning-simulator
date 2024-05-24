@@ -98,18 +98,25 @@ class BaseClient:
     def add_compute_task(self, task: Task):
         self.simulator.workflow_dag.tasks[task.name] = task
         self.latest_task = task
+
+        # Keep latest tasks for each client
+        self.simulator.tasks_to_keep.add(task.name)
+        queue = self.simulator.client_last_tasks[self.index]
+        queue.put(task.name)
+        if queue.qsize() > self.simulator.settings.client_last_tasks_queue_size:
+            self.simulator.tasks_to_keep.remove(queue.get())
+
         # Link inputs/outputs of the task
         if (task.func == "train" and task.data["model"] is not None) or task.func == "test" or \
                 (task.func == "compute_gradient" and task.data["model"] is not None) or task.func == "gradient_update":
-            preceding_task: Task = self.simulator.workflow_dag.tasks[task.data["model"]]
-            preceding_task.outputs.append(task)
-            task.inputs.append(preceding_task)
+            self.process_task(task, task.data["model"])
             if task.func == "gradient_update" and task.data["gradient_model"] != task.data["model"]:
-                preceding_task: Task = self.simulator.workflow_dag.tasks[task.data["gradient_model"]]
-                preceding_task.outputs.append(task)
-                task.inputs.append(preceding_task)
+                self.process_task(task, task.data["gradient_model"])
         elif task.func == "aggregate":
             for model_name in task.data["models"]:
-                preceding_task: Task = self.simulator.workflow_dag.tasks[model_name]
-                preceding_task.outputs.append(task)
-                task.inputs.append(preceding_task)
+                self.process_task(task, model_name)
+
+    def process_task(self, task: Task, model_name: str):
+        preceding_task: Task = self.simulator.get_preceding_task(model_name)
+        preceding_task.outputs.append(task)
+        task.inputs.append(preceding_task)
