@@ -153,8 +153,9 @@ class Broker:
                     break
 
                 asyncio.run_coroutine_threadsafe(self.worker_result_queue.put(item), loop)
-            except KeyError:
+            except KeyError as exc:
                 self.logger.warning("KeyError in free_dead_references()")
+                self.logger.exception(exc)
             except Exception as exc:
                 self.logger.exception(exc)
                 asyncio.run_coroutine_threadsafe(self.worker_result_queue.put(("error", None, None)), loop)
