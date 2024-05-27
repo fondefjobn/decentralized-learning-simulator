@@ -25,6 +25,7 @@ def get_args():
     parser.add_argument('--stragglers-proportion', type=float, default=0.0)
     parser.add_argument('--stragglers-ratio', type=float, default=0.1)
     parser.add_argument('--dag-size', type=int, default=1000)
+    parser.add_argument('--client-tasks-queue-size', type=int, default=10)
 
     # Algorithm-specific parameters
     parser.add_argument('--synchronous', action=argparse.BooleanOptionalAction)

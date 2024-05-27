@@ -63,7 +63,7 @@ class SessionSettings:
     stragglers_proportion: float = 0.0  # value between 0=none and 1=all
     stragglers_ratio: float = 0.1  # value between 0=no_action and 1=no_struggle
     dag_size: int = 1000
-    client_last_tasks_queue_size: int = 10
+    client_tasks_queue_size: int = 10
 
     def save_to_file(self, path: str) -> None:
         with open(path, "w") as file:
@@ -104,3 +104,4 @@ class SessionSettings:
             file.write("stragglers,%f\n" % self.stragglers_proportion)
             file.write("stragglers_ratio,%f\n" % self.stragglers_ratio)
             file.write("dag_size,%d\n" % self.dag_size)
+            file.write("client_tasks_queue_size,%d\n" % self.client_tasks_queue_size)

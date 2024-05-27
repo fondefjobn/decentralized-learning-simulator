@@ -56,6 +56,7 @@ def run():
         stragglers_ratio=args.stragglers_ratio,
         stragglers_proportion=args.stragglers_proportion,
         dag_size=args.dag_size,
+        client_tasks_queue_size=args.client_tasks_queue_size,
     )
 
     if settings.algorithm == "fl":

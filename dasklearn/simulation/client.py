@@ -103,7 +103,7 @@ class BaseClient:
         self.simulator.tasks_to_keep.add(task.name)
         queue = self.simulator.client_last_tasks[self.index]
         queue.put(task.name)
-        if queue.qsize() > self.simulator.settings.client_last_tasks_queue_size:
+        if queue.qsize() > self.simulator.settings.client_tasks_queue_size:
             self.simulator.tasks_to_keep.remove(queue.get())
 
         # Link inputs/outputs of the task
