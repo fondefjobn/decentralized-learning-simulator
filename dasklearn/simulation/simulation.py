@@ -27,7 +27,7 @@ from dasklearn.simulation.events import *
 from dasklearn.simulation.client import BaseClient
 from dasklearn.tasks.dag import WorkflowDAG
 from dasklearn.tasks.task import Task
-from dasklearn.util import MICROSECONDS
+from dasklearn.util import MICROSECONDS, time_to_sec
 from dasklearn.util.logging import setup_logging
 
 
@@ -141,7 +141,7 @@ class Simulation:
     async def run(self):
         self.setup_directories()
         if not self.settings.unit_testing:
-            setup_logging(self.data_dir, "coordinator.log")
+            setup_logging(self.data_dir, "coordinator.log", self.settings.log_level)
             self.communication = Communication("coordinator", self.settings.port, self.on_message)
             self.communication.start()
             self.settings.save_to_file(os.path.join(self.data_dir, "settings.csv"))
@@ -200,6 +200,7 @@ class Simulation:
 
             # DAG is large enough, compute tasks
             if len(self.workflow_dag.tasks) >= self.settings.dag_size and not self.settings.dry_run:
+                self.logger.warning("[t=%.3f]", time_to_sec(self.current_time))
                 self.memory_log.append((self.current_time, process.memory_info()))
                 self.workflow_dag.save_to_file(os.path.join(self.data_dir, "workflow_graph.txt"))
 
