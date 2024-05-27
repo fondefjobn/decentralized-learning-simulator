@@ -41,6 +41,8 @@ class Broker:
         self.broker_addresses: Dict[str, str] = {}
         self.results: Dict[str, Model] = {}
         self.results_condition: threading.Condition = threading.Condition()
+        self.brokers_ready: int = 0
+        self.brokers_condition: threading.Condition = threading.Condition()
         self.tasks_to_keep: Set[str] = set()
         self.tasks_to_clear: Dict[str, Task] = {}
 
@@ -292,6 +294,52 @@ class Broker:
                 if next_task.has_all_inputs():
                     self.schedule_task(next_task)
 
+    async def send_ready(self):
+        self.communication.send_message_to_all_brokers(pickle.dumps({"type": "ready"}))
+
+    def update_dag(self, msg):
+        # Wait to receive all results
+        with self.results_condition:
+            while len(self.results) < len(self.tasks_to_keep):
+                self.results_condition.wait()
+
+        # Update dag
+        self.dag = WorkflowDAG.unserialize(msg["dag"], self.dag, self.results)
+        self.tasks_to_keep = msg["tasks_to_keep"]
+        # Keep relevant models
+        new_results: Dict[str, Model] = {}
+        for task_name in self.tasks_to_keep:
+            if task_name in self.results:
+                new_results[task_name] = self.results[task_name]
+        self.results = new_results
+
+        # Clear not needed tasks
+        cleared: Set[str] = set()
+        for task_name, task in self.tasks_to_clear.items():
+            if task_name not in self.tasks_to_keep:
+                task.clear_data()
+                cleared.add(task_name)
+        for task_name in cleared:
+            del self.tasks_to_clear[task_name]
+
+        # Wait for all brokers to update dag
+        self.brokers_ready += 1
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(self.send_ready())
+        finally:
+            loop.close()
+        with self.brokers_condition:
+            while self.brokers_ready < len(self.broker_addresses):
+                self.brokers_condition.wait()
+        self.brokers_ready = 0
+
+        # Enqueue tasks
+        for task_name in msg["tasks"]:
+            task = self.dag.tasks[task_name]
+            self.schedule_task(task)
+
     def on_message(self, identity: str, msg: Dict):
         if identity == "coordinator" and msg["type"] == "config":  # Configuration received from the coordinator
             self.logger.info("Received configuration from the coordinator")
@@ -310,34 +358,8 @@ class Broker:
             self.connect_to_brokers()
             ensure_future(self.start_workers())
         elif identity == "coordinator" and msg["type"] == "tasks":
-            # Wait to receive all results
-            with self.results_condition:
-                while len(self.results) < len(self.tasks_to_keep):
-                    self.results_condition.wait()
-
-            # Update dag
-            self.dag = WorkflowDAG.unserialize(msg["dag"], self.dag, self.results)
-            self.tasks_to_keep = msg["tasks_to_keep"]
-            # Keep relevant models
-            new_results: Dict[str, Model] = {}
-            for task_name in self.tasks_to_keep:
-                if task_name in self.results:
-                    new_results[task_name] = self.results[task_name]
-            self.results = new_results
-
-            # Clear not needed tasks
-            cleared: Set[str] = set()
-            for task_name, task in self.tasks_to_clear.items():
-                if task_name not in self.tasks_to_keep:
-                    task.clear_data()
-                    cleared.add(task_name)
-            for task_name in cleared:
-                del self.tasks_to_clear[task_name]
-
-            # Enqueue tasks
-            for task_name in msg["tasks"]:
-                task = self.dag.tasks[task_name]
-                self.schedule_task(task)
+            thread = threading.Thread(target=self.update_dag, args=(msg, ))
+            thread.start()
         elif msg["type"] == "shutdown":
             self.logger.info("Received shutdown signal - stopping")
             self.shutdown()
@@ -345,6 +367,11 @@ class Broker:
             self.logger.info("Received task %s result from %s", msg["task"], identity)
             task = self.dag.tasks[msg["task"]]
             self.handle_task_result(task, msg["result"])
+        elif msg["type"] == "ready":
+            self.brokers_ready += 1
+            if self.brokers_ready == len(self.broker_addresses):
+                with self.brokers_condition:
+                    self.brokers_condition.notify_all()
         else:
             raise RuntimeError("Unknown message with type %s" % msg["type"])
 
