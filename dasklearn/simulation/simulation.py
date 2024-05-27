@@ -171,11 +171,11 @@ class Simulation:
             for client in self.clients:
                 client.bw_scheduler.bw_limit = 100000000000
 
-        # Apply strugglers
-        n_strugglers: int = int(self.settings.participants * self.settings.stragglers_proportion + 0.0000001)
-        strugglers = nlargest(n_strugglers, self.clients, key=lambda x: x.simulated_speed)
-        for client in strugglers:
-            client.struggler = True
+        # Apply stragglers
+        n_stragglers: int = int(self.settings.participants * self.settings.stragglers_proportion + 0.0000001)
+        stragglers = nlargest(n_stragglers, self.clients, key=lambda x: x.simulated_speed)
+        for client in stragglers:
+            client.straggler = True
             if self.settings.stragglers_ratio == 0.0:
                 # arbitrary large int
                 client.simulated_speed = 1000000000000
@@ -384,9 +384,9 @@ class Simulation:
             for time, mem_info in self.memory_log:
                 shared_mem = 0 if not hasattr(mem_info, "shared") else mem_info.shared
                 file.write("%d,%d,%d,%d\n" % (time, mem_info.rss, mem_info.vms, shared_mem))
-        # Write strugglers log
+        # Write stragglers log
         if self.settings.stragglers_ratio > 0.0:
-            with open(os.path.join(self.data_dir, "strugglers.csv"), "w") as file:
-                file.write("client,struggler\n")
+            with open(os.path.join(self.data_dir, "stragglers.csv"), "w") as file:
+                file.write("client,straggler\n")
                 for client in self.clients:
-                    file.write("%d,%s\n" % (client.index, client.struggler))
+                    file.write("%d,%s\n" % (client.index, client.straggler))
