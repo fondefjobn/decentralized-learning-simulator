@@ -42,6 +42,7 @@ class Broker:
         self.results: Dict[str, Model] = {}
         self.results_condition: threading.Condition = threading.Condition()
         self.tasks_to_keep: Set[str] = set()
+        self.tasks_to_clear: Dict[str, Task] = {}
 
         self.workers: List[Process] = []
         self.psutil_workers: List = []
@@ -192,6 +193,7 @@ class Broker:
 
                 # Send result to all brokers
                 if task_name in self.tasks_to_keep:
+                    self.tasks_to_clear[task_name] = task
                     self.communication.send_message_to_all_brokers(msg)
                     self.handle_task_result(task, res)
                     # Sink task
@@ -322,6 +324,15 @@ class Broker:
                 if task_name in self.results:
                     new_results[task_name] = self.results[task_name]
             self.results = new_results
+
+            # Clear not needed tasks
+            cleared: Set[str] = set()
+            for task_name, task in self.tasks_to_clear.items():
+                if task_name not in self.tasks_to_keep:
+                    task.clear_data()
+                    cleared.add(task_name)
+            for task_name in cleared:
+                del self.tasks_to_clear[task_name]
 
             # Enqueue tasks
             for task_name in msg["tasks"]:
